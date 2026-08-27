@@ -1,3 +1,5 @@
+import random
+
 def gerar_mapa(dimensao, pct_sujeira=0.4, sujo_na_origem=False):
     total_celulas = dimensao * dimensao
     qtd_sujas = round(total_celulas * pct_sujeira)

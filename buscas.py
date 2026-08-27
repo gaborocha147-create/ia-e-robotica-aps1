@@ -4,12 +4,13 @@ from gerar_mapa import gerar_mapa
 
 
 class AgentSpecification(State):
-
     def __init__(self, op, matriz):
         # voce sempre deve usar esta chamada para inicializar a superclasse
         super().__init__(op)
         self.matriz = matriz
     
+    def minkowsky(p1, p2):
+        
     def successors(self):
         successors = []
         #TODO
