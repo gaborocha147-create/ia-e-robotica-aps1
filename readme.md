@@ -17,6 +17,8 @@ Deve-se usar:
 m para profundidade deve ser o mesmo para todas as dimensões no algoritmo de 
 profunidade. 
 
+Deverão ser feitos gráficos de complexidade e espaço de memória
+
 ### Membros
  - Humberto Filho Castello Branco Lages Rebello e Castro 
  - Gabriel Kenji Nahakara Rocha
