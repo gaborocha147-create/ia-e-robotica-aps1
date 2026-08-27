@@ -1,12 +1,14 @@
 from aigyminsper.search.search_algorithms import BuscaLargura
 from aigyminsper.search.graph import State
+from gerar_mapa import gerar_mapa
+
 
 class AgentSpecification(State):
 
-    def __init__(self, op):
+    def __init__(self, op, matriz):
         # voce sempre deve usar esta chamada para inicializar a superclasse
         super().__init__(op)
-        #TODO
+        self.matriz = matriz
     
     def successors(self):
         successors = []
