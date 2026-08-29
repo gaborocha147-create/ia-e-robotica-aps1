@@ -1,5 +1,5 @@
 import random
-from aigyminsper.search.search_algorithms import BuscaLargura, BuscaProfundidade
+from aigyminsper.search.search_algorithms import BuscaLargura, BuscaProfundidade, BuscaProfundidadeIterativa
 from aigyminsper.search.graph import State
 import json
 
@@ -8,18 +8,18 @@ import time
 import multiprocessing
 import tracemalloc
 import matplotlib.pyplot as plt
-
+import psutil
 
 def gerar_mapa(dimensao, pct_sujeira=0.4, sujo_na_origem=False):
     total_celulas = dimensao * dimensao
     qtd_sujas = round(total_celulas * pct_sujeira)
-    
+
     coordenadas = [(i, j) for i in range(dimensao) for j in range(dimensao)]
-    
+
     if not sujo_na_origem:
-        coordenadas.remove((0,0))
+        coordenadas.remove((0, 0))
         qtd_sujas = min(qtd_sujas, len(coordenadas))
-        
+
     sujas = random.sample(coordenadas, qtd_sujas)
 
     matriz = [['limpo' for _ in range(dimensao)] for _ in range(dimensao)]
@@ -35,7 +35,7 @@ class AgentSpecification(State):
             self.posicao = posicao
             self.quartos = quartos
             self.posicao_anterior = posicao_anterior
-            
+
     def successors(self):
         successors = []
 
@@ -51,7 +51,7 @@ class AgentSpecification(State):
                     self.posicao.copy()
                 )
                 successors.append(obj1)
-            
+
         if self.posicao[1] > 0:
             nova_pos = self.posicao.copy()
             nova_pos[1] -= 1
@@ -64,7 +64,7 @@ class AgentSpecification(State):
                     self.posicao.copy()
                 )
                 successors.append(obj2)
-            
+
         if self.posicao[0] > 0:
             nova_pos = self.posicao.copy()
             nova_pos[0] -= 1
@@ -77,7 +77,7 @@ class AgentSpecification(State):
                     self.posicao.copy()
                 )
                 successors.append(obj3)
-            
+
         if self.posicao[0] < len(self.quartos)-1:
             nova_pos = self.posicao.copy()
             nova_pos[0] += 1
@@ -90,10 +90,10 @@ class AgentSpecification(State):
                     self.posicao.copy()
                 )
                 successors.append(obj4)
-            
+
         x = self.posicao[0]
         y = self.posicao[1]
-        
+
         if self.quartos[x][y] == 'sujo':
             matriz = [linha.copy() for linha in self.quartos]
             matriz[x][y] = "limpo"
@@ -106,9 +106,9 @@ class AgentSpecification(State):
             )
 
             successors.append(obj5)
-            
+
         return successors
-    
+
     def is_goal(self):
         limpa = True
 
@@ -116,36 +116,40 @@ class AgentSpecification(State):
             if 'sujo' in linha:
                 limpa = False
 
-        pos_original = (self.posicao == [0,0])
+        pos_original = (self.posicao == [0, 0])
 
         return limpa and pos_original
-    
+
     def description(self):
         return """Resolvendo o problema de aspirador de pó com dois quartos."""
-        
+
     def cost(self):
         if "limpar" in self.operator:
             return 2
         else:
             return 1
-        
+
     def env(self):
         return json.dumps(self.__dict__)
 
 
 def executar_busca(nome_algoritmo, matriz, fila):
-    
+
     if nome_algoritmo == "Largura":
         algoritmo = BuscaLargura()
         limite = None
-        
+
     elif nome_algoritmo == "Profundidade":
         algoritmo = BuscaProfundidade()
         limite = 20
 
+    elif nome_algoritmo == "Profundidade Iterativa":
+        algoritmo = BuscaProfundidadeIterativa()
+        limite = None
+
     nova_matriz = [linha.copy() for linha in matriz]
 
-    state = AgentSpecification('', [0,0], nova_matriz)
+    state = AgentSpecification('', [0, 0], nova_matriz)
 
     tracemalloc.start()
     inicio = time.perf_counter()
@@ -153,7 +157,7 @@ def executar_busca(nome_algoritmo, matriz, fila):
     try:
 
         if limite is not None:
-            result = algoritmo.search(state,limite)
+            result = algoritmo.search(state, limite)
         else:
             result = algoritmo.search(state)
 
@@ -186,32 +190,62 @@ def executar_busca(nome_algoritmo, matriz, fila):
         })
 
 
-# ============================================================
-# ADICIONADO
-# Executa com limite máximo de 5 minutos
-# ============================================================
-
-def executar_com_timeout(nome_algoritmo, matriz, timeout=300):
+def executar_com_timeout(nome_algoritmo, matriz, timeout=300, limite_memoria_gb=16):
 
     fila = multiprocessing.Queue()
 
-    processo = multiprocessing.Process(target=executar_busca,args=(nome_algoritmo, matriz, fila))
+    processo = multiprocessing.Process(
+        target=executar_busca,
+        args=(nome_algoritmo, matriz, fila)
+    )
 
     processo.start()
 
-    # espera no máximo 300 segundos
-    processo.join(timeout)
+    inicio = time.perf_counter()
 
-    if processo.is_alive():
-        processo.terminate()
-        processo.join()
+    processo_psutil = psutil.Process(processo.pid)
 
-        return None
+    limite_memoria_bytes = limite_memoria_gb * (1024 ** 3)
+
+    while processo.is_alive():
+
+        tempo_atual = time.perf_counter() - inicio
+
+        if tempo_atual >= timeout:
+            processo.terminate()
+            processo.join()
+
+            return {
+                "status": "timeout"
+            }
+
+        try:
+            memoria_atual = processo_psutil.memory_info().rss
+
+            if memoria_atual >= limite_memoria_bytes:
+
+                processo.terminate()
+                processo.join()
+
+                return {
+                    "status": "memoria",
+                    "memoria": memoria_atual / (1024 ** 3)
+                }
+
+        except psutil.NoSuchProcess:
+            break
+        time.sleep(0.1)
+
+    processo.join()
 
     if not fila.empty():
-        return fila.get()
+        resultado = fila.get()
+        resultado["status"] = "concluido"
+        return resultado
 
-    return None
+    return {
+        "status": "erro"
+    }
 
 
 def gerar_graficos(resultados):
@@ -222,7 +256,7 @@ def gerar_graficos(resultados):
     for algoritmo, dados in resultados.items():
 
         if len(dados["dimensoes"]) > 0:
-            plt.plot(dados["dimensoes"],dados["tempos"],marker='o',label=algoritmo)
+            plt.plot(dados["dimensoes"], dados["tempos"], marker='o', label=algoritmo)
 
     plt.xlabel("Dimensão do tabuleiro (N x N)")
     plt.ylabel("Tempo de execução (segundos)")
@@ -230,7 +264,7 @@ def gerar_graficos(resultados):
     plt.legend()
     plt.grid(True)
 
-    plt.savefig("grafico_tempo.png",dpi=300,bbox_inches="tight")
+    plt.savefig("grafico_tempo.png", dpi=300, bbox_inches="tight")
 
     plt.show()
 
@@ -241,7 +275,7 @@ def gerar_graficos(resultados):
     for algoritmo, dados in resultados.items():
 
         if len(dados["dimensoes"]) > 0:
-            plt.plot(dados["dimensoes"],dados["memorias"],marker='o',label=algoritmo)
+            plt.plot(dados["dimensoes"], dados["memorias"], marker='o', label=algoritmo)
 
     plt.xlabel("Dimensão do tabuleiro (N x N)")
     plt.ylabel("Pico de memória (MB)")
@@ -249,7 +283,7 @@ def gerar_graficos(resultados):
     plt.legend()
     plt.grid(True)
 
-    plt.savefig("grafico_memoria.png",dpi=300,bbox_inches="tight")
+    plt.savefig("grafico_memoria.png", dpi=300, bbox_inches="tight")
 
     plt.show()
 
@@ -261,6 +295,7 @@ def main():
     algoritmos = [
         "Largura",
         "Profundidade",
+        "Profundidade Iterativa"
     ]
 
     resultados = {
@@ -273,14 +308,19 @@ def main():
             "dimensoes": [],
             "tempos": [],
             "memorias": []
+        },
+        "Profundidade Iterativa": {
+            "dimensoes": [],
+            "tempos": [],
+            "memorias": []
         }
     }
 
     ativos = {
         "Largura": True,
         "Profundidade": True,
+        "Profundidade Iterativa": True
     }
-
 
     while any(ativos.values()):
 
@@ -304,15 +344,40 @@ def main():
             resultado = executar_com_timeout(
                 nome_algoritmo,
                 matriz,
-                timeout=300
+                timeout=300,
+                limite_memoria_gb=16
             )
 
+            # Parou porque passou de 5 minutos
+            if resultado["status"] == "timeout":
+                print(
+                    f'{nome_algoritmo} ultrapassou 5 minutos '
+                    f'em {dimensao}x{dimensao}.'
+                )
 
-            if resultado is None:
-                print(f'{nome_algoritmo} ultrapassou 5 minutos em {dimensao}x{dimensao}.')
                 ativos[nome_algoritmo] = False
                 continue
 
+            # Parou porque atingiu 16 GB
+            elif resultado["status"] == "memoria":
+                print(
+                    f'{nome_algoritmo} atingiu 16 GB de memória '
+                    f'em {dimensao}x{dimensao}.'
+                )
+
+                ativos[nome_algoritmo] = False
+                continue
+
+            # Algum erro inesperado
+            elif resultado["status"] == "erro":
+                print(
+                    f'Erro durante a execução de {nome_algoritmo}.'
+                )
+
+                ativos[nome_algoritmo] = False
+                continue
+
+            # Execução terminou normalmente
             tempo = resultado["tempo"]
             memoria = resultado["memoria"]
 
