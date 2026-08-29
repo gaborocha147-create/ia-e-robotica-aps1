@@ -22,3 +22,4 @@ Deverão ser feitos gráficos de complexidade e espaço de memória
 ### Membros
  - Humberto Filho Castello Branco Lages Rebello e Castro 
  - Gabriel Kenji Nahakara Rocha
+ - Eduardo Khaled 
